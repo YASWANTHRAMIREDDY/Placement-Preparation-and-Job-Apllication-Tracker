@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # 1. MySQL 8.0 Database Service
+  mysql:
+    image: mysql:8.0
+    container_name: placement_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword123
+      MYSQL_DATABASE: placement_tracker
+      MYSQL_USER: placement_user
+      MYSQL_PASSWORD: placement_pass
+    ports:
+      - "3308:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "placement_user", "-pplacement_pass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - placement_network
+
+  # 2. FastAPI Backend API Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: placement_backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - PROJECT_NAME=Placement Preparation & Job Application Tracker
+      - DATABASE_URL=mysql+pymysql://placement_user:placement_pass@mysql:3306/placement_tracker
+      - SECRET_KEY=supersecretjwtkey_change_in_production_environment_with_strong_random_value
+      - ACCESS_TOKEN_EXPIRE_MINUTES=1440
+      - CORS_ORIGINS=["http://localhost:3000","http://localhost:5173","http://localhost:80","http://127.0.0.1:3000"]
+    ports:
+      - "8002:8000"
+    networks:
+      - placement_network
+
+  # 3. React.js Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: placement_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=http://backend:8002
+    ports:
+      - "3000:80"
+    networks:
+      - placement_network
+
+  # 4. Optional Database Management GUI
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: placement_phpmyadmin
+    restart: unless-stopped
+    depends_on:
+      - mysql
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: root
+      PMA_PASSWORD: rootpassword123
+    ports:
+      - "8081:80"
+    networks:
+      - placement_network
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  placement_network:
+    driver: bridge
